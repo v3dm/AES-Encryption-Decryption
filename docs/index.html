@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AES-Encryptor — Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width:700px; margin:40px auto; line-height:1.4; }
+    textarea { width:100%; height:80px; }
+    input[type="password"], input[type="text"] { width:100%; padding:8px; }
+    button { padding:8px 12px; margin-top:8px; }
+    .box { border:1px solid #ddd; padding:12px; margin-bottom:16px; border-radius:6px; }
+    label { font-weight:600; display:block; margin-bottom:6px; }
+    .small { font-size:0.9em; color:#555; }
+  </style>
+</head>
+<body>
+  <h2>AES-Encryptor — Basic Demo</h2>
+  <p class="small">AES-256-GCM with PBKDF2 (password → key). For demo only — do not use this exact code in production without review.</p>
+
+  <div class="box">
+    <label>Plaintext</label>
+    <textarea id="plaintext" placeholder="Type text to encrypt...">Hello world</textarea>
+
+    <label>Password</label>
+    <input id="password" type="password" placeholder="Enter a password">
+
+    <button onclick="doEncrypt()">Encrypt → produce ciphertext</button>
+    <p><label>Ciphertext (base64):</label><textarea id="ciphertext"></textarea></p>
+  </div>
+
+  <div class="box">
+    <label>Ciphertext (base64)</label>
+    <textarea id="ciphertext_in" placeholder="Paste ciphertext here..."></textarea>
+
+    <label>Password</label>
+    <input id="password_in" type="password" placeholder="Enter the same password">
+
+    <button onclick="doDecrypt()">Decrypt → recover plaintext</button>
+    <p><label>Recovered plaintext:</label><textarea id="recovered"></textarea></p>
+  </div>
+
+  <script>
+    function togglePassword(id, btn) {
+  const input = document.getElementById(id);
+  if (input.type === "password") {
+    input.type = "text";
+    btn.textContent = "🙈"; // change icon to hide mode
+  } else {
+    input.type = "password";
+    btn.textContent = "👁️"; // change icon back
+  }
+}
+
+    async function doEncrypt() {
+      const plaintext = document.getElementById('plaintext').value;
+      const password = document.getElementById('password').value;
+      if (!password) { alert("Enter a password"); return; }
+
+      const resp = await fetch('/api/encrypt', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ plaintext, password })
+      });
+      if (!resp.ok) {
+        alert('Encryption failed: ' + (await resp.text()));
+        return;
+      }
+      const data = await resp.json();
+      document.getElementById('ciphertext').value = data.ciphertext_b64;
+      document.getElementById('ciphertext_in').value = data.ciphertext_b64; // helpful copy
+    }
+
+    async function doDecrypt() {
+      const ciphertext_b64 = document.getElementById('ciphertext_in').value;
+      const password = document.getElementById('password_in').value;
+      if (!ciphertext_b64 || !password) { alert("Provide ciphertext and password"); return; }
+
+      const resp = await fetch('/api/decrypt', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ciphertext_b64, password })
+      });
+      if (!resp.ok) {
+        const j = await resp.json().catch(()=>null);
+        alert('Decryption failed: ' + (j?.detail || await resp.text()));
+        return;
+      }
+      const data = await resp.json();
+      document.getElementById('recovered').value = data.plaintext;
+    }
+  </script>
+</body>
+</html>
