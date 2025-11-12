@@ -7,6 +7,8 @@ from Crypto.Protocol.KDF import PBKDF2
 from Crypto.Random import get_random_bytes
 import base64
 import os
+from fastapi.middleware.cors import CORSMiddleware
+
 
 # ---  params ---
 PBKDF2_ITER = 100_000
@@ -16,7 +18,14 @@ IV_LEN = 12
 TAG_LEN = 16
 
 app = FastAPI()
-
+# For demo, allow all origins. For stricter security later, replace ["*"] with your Pages URL.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
