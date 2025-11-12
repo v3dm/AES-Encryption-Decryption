@@ -18,7 +18,9 @@ IV_LEN = 12
 TAG_LEN = 16
 
 app = FastAPI()
+
 # For demo, allow all origins. For stricter security later, replace ["*"] with your Pages URL.
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,6 +28,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+from db import Base, engine
+from db import EncryptedBlob
+from crud import create_blob, get_blob, list_blobs, delete_blob
+
+# create tables
+Base.metadata.create_all(bind=engine)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -84,3 +94,47 @@ def decrypt(req: DecryptRequest):
         return {"plaintext": plaintext}
     except Exception:
         raise HTTPException(status_code=400, detail="Decryption failed (bad password or corrupted data)")
+
+
+from fastapi import Query
+
+@app.post("/api/save", response_model=dict)
+def api_save(ciphertext_b64: str, filename: str = None, note: str = None, owner: str = None):
+    """
+    Save ciphertext and optional metadata. Returns the created record id.
+    """
+    rec = create_blob(ciphertext_b64=ciphertext_b64, filename=filename, note=note, owner=owner)
+    return {"id": rec.id, "created_at": rec.created_at.isoformat()}
+
+@app.get("/api/blob/{blob_id}", response_model=dict)
+def api_get_blob(blob_id: int):
+    rec = get_blob(blob_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {
+        "id": rec.id,
+        "ciphertext_b64": rec.ciphertext_b64,
+        "filename": rec.filename,
+        "note": rec.note,
+        "algorithm": rec.algorithm,
+        "kdf": rec.kdf,
+        "owner": rec.owner,
+        "created_at": rec.created_at.isoformat()
+    }
+
+@app.get("/api/blobs", response_model=list)
+def api_list_blobs(limit: int = Query(50, ge=1, le=200)):
+    recs = list_blobs(limit=limit)
+    return [{
+        "id": r.id,
+        "filename": r.filename,
+        "note": r.note,
+        "created_at": r.created_at.isoformat()
+    } for r in recs]
+
+@app.delete("/api/blob/{blob_id}", response_model=dict)
+def api_delete_blob(blob_id: int):
+    ok = delete_blob(blob_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"deleted": True}
