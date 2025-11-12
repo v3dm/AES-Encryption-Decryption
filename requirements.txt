@@ -2,3 +2,5 @@ fastapi
 uvicorn[standard]
 pycryptodome
 python-multipart
+SQLAlchemy
+psycopg2-binary
