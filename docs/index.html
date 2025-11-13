@@ -56,7 +56,8 @@
   const password = document.getElementById('password').value;
   if (!password) { alert("Enter a password"); return; }
 
-  const resp = await fetch('/api/encrypt', {
+  // use baseURL so we call your Render backend (not relative origin)
+  const resp = await fetch(baseURL + '/api/encrypt', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ plaintext, password })
@@ -72,23 +73,26 @@
   document.getElementById('ciphertext').value = ciphertext_b64;
   document.getElementById('ciphertext_in').value = ciphertext_b64; // helpful copy
 
-  // --- auto-save to DB (only ciphertext, no password) ---
-  // Read optional filename/note inputs if they exist in your HTML
-  const filenameEl = document.getElementById('filenameInput');
-  const noteEl = document.getElementById('noteInput');
-  const filename = filenameEl ? filenameEl.value || null : null;
-  const note = noteEl ? noteEl.value || "auto-saved" : "auto-saved";
+  // debug log so we can see in Console the save step
+  console.log("Encrypt succeeded — ciphertext length:", ciphertext_b64.length);
 
-  // If you want an opt-out checkbox, it will be checked below (see optional HTML)
+  // --- auto-save to DB (only ciphertext, no password) ---
+  const filename = document.getElementById('filenameInput')?.value || null;
+  const note = document.getElementById('noteInput')?.value || "auto-saved";
+
   const autoSaveEnabled = (document.getElementById('autoSaveToggle')?.checked ?? true);
 
   if (autoSaveEnabled) {
+    console.log("Calling saveCiphertext...");
     saveCiphertext(ciphertext_b64, filename, note).then(res => {
       if (res) {
-        // optional: show saved id somewhere
         console.log("Saved record id:", res.id);
+      } else {
+        console.log("Save returned null or failed.");
       }
     });
+  } else {
+    console.log("Auto-save disabled by user.");
   }
 }
 
