@@ -1,4 +1,4 @@
-<!doctype html>
+<!-- <!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -163,6 +163,270 @@
       e.preventDefault();
       doDecrypt();
     });
+  </script>
+</body>
+</html> -->
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AES-Encryptor — Secure Cloud</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width:800px; margin:40px auto; line-height:1.5; background-color: #f4f4f9; color: #333; }
+    h2 { color: #2c3e50; }
+    textarea { width:100%; height:80px; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    input[type="password"], input[type="text"], input[type="email"] { width:100%; padding:10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    button { padding:10px 15px; margin-top:10px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 4px; font-size: 14px; }
+    button:hover { background-color: #0056b3; }
+    button.secondary { background-color: #6c757d; }
+    .box { background: white; border:1px solid #ddd; padding:20px; margin-bottom:20px; border-radius:8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    label { font-weight:600; display:block; margin-bottom:5px; margin-top: 15px; }
+    .small { font-size:0.9em; color:#666; }
+    
+    /* Auth Section Styles */
+    #auth-section { background-color: #e9ecef; border-color: #cbd3da; }
+    .hidden { display: none; }
+    .user-display { float: right; font-weight: bold; color: #28a745; }
+  </style>
+</head>
+<body>
+
+  <div style="margin-bottom: 20px;">
+    <span id="userDisplay" class="user-display hidden"></span>
+    <h2>AES-Encryptor</h2>
+  </div>
+
+  <div id="auth-section" class="box">
+    <h3>Login / Sign Up</h3>
+    <p class="small">Log in to save your encrypted files to your personal cloud.</p>
+    <input id="email" type="email" placeholder="Enter your email" />
+    <input id="auth-password" type="password" placeholder="Enter your password" />
+    <div style="margin-top: 10px;">
+      <button id="btn-login">Log In</button>
+      <button id="btn-signup" class="secondary">Sign Up</button>
+      <button id="btn-logout" class="secondary hidden">Log Out</button>
+    </div>
+    <p id="auth-msg" class="small" style="color: blue;"></p>
+  </div>
+
+  <div class="box">
+    <h3>1. Encrypt</h3>
+    <label>Plaintext</label>
+    <textarea id="plaintext" placeholder="Type text to encrypt...">Hello world</textarea>
+
+    <label>Encryption Password (for AES)</label>
+    <input id="aes-password" type="password" placeholder="Enter a secret key for encryption">
+
+    <button id="encryptButton">Encrypt Text</button>
+
+    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ccc;">
+        <label>Save to Database (Optional)</label>
+        <input id="filenameInput" type="text" placeholder="Filename (e.g., secret.txt)">
+        <input id="noteInput" type="text" placeholder="Note (e.g., My wifi password)">
+        <button id="saveButton" class="secondary" disabled>Save to Cloud (Login required)</button>
+    </div>
+    
+    <p><label>Result (Ciphertext):</label><textarea id="ciphertext"></textarea></p>
+  </div>
+
+  <div class="box">
+    <h3>2. Decrypt</h3>
+    <label>Ciphertext (base64)</label>
+    <textarea id="ciphertext_in" placeholder="Paste ciphertext here..."></textarea>
+
+    <label>Encryption Password</label>
+    <input id="aes-password_in" type="password" placeholder="Enter the secret key">
+
+    <button id="decryptButton">Decrypt</button>
+    <p><label>Recovered Plaintext:</label><textarea id="recovered"></textarea></p>
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. SUPABASE CONFIGURATION
+    // ==========================================
+    // TODO: REPLACE THESE WITH YOUR ACTUAL KEYS FROM SUPABASE DASHBOARD
+    const SUPABASE_URL = 'https://uayzbueonvhyjckuxbgu.supabase.co'; 
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVheXpidWVvbnZoeWpja3V4Ymd1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMxODY4NDEsImV4cCI6MjA3ODc2Mjg0MX0.KG68LNOx_W1XaqENLtEybOuuHin4_OR5jpM5atpcFDA';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let currentUser = null;
+
+    // ==========================================
+    // 2. BACKEND CONFIGURATION
+    // ==========================================
+    const baseURL = ""; // Empty means use same domain (Render)
+
+    // ==========================================
+    // 3. AUTHENTICATION LOGIC
+    // ==========================================
+    const emailInput = document.getElementById('email');
+    const passInput = document.getElementById('auth-password');
+    const authMsg = document.getElementById('auth-msg');
+    const saveBtn = document.getElementById('saveButton');
+
+    // Check if user is already logged in on load
+    async function checkUser() {
+        const { data: { session } } = await supabase.auth.getSession();
+        updateUserUI(session?.user);
+    }
+
+    function updateUserUI(user) {
+        currentUser = user;
+        const loginBtn = document.getElementById('btn-login');
+        const signupBtn = document.getElementById('btn-signup');
+        const logoutBtn = document.getElementById('btn-logout');
+        const userDisplay = document.getElementById('userDisplay');
+
+        if (user) {
+            // User is logged in
+            emailInput.classList.add('hidden');
+            passInput.classList.add('hidden');
+            loginBtn.classList.add('hidden');
+            signupBtn.classList.add('hidden');
+            logoutBtn.classList.remove('hidden');
+            
+            userDisplay.textContent = `Logged in as: ${user.email}`;
+            userDisplay.classList.remove('hidden');
+            
+            // Enable Save Button
+            saveBtn.disabled = false;
+            saveBtn.textContent = "Save to Cloud";
+            authMsg.textContent = "";
+        } else {
+            // User is logged out
+            emailInput.classList.remove('hidden');
+            passInput.classList.remove('hidden');
+            loginBtn.classList.remove('hidden');
+            signupBtn.classList.remove('hidden');
+            logoutBtn.classList.add('hidden');
+            
+            userDisplay.classList.add('hidden');
+            
+            // Disable Save Button
+            saveBtn.disabled = true;
+            saveBtn.textContent = "Save to Cloud (Login required)";
+        }
+    }
+
+    // Sign Up
+    document.getElementById('btn-signup').addEventListener('click', async () => {
+        const email = emailInput.value;
+        const password = passInput.value;
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) authMsg.textContent = "Error: " + error.message;
+        else authMsg.textContent = "Success! Check your email (if verification enabled) or log in.";
+    });
+
+    // Log In
+    document.getElementById('btn-login').addEventListener('click', async () => {
+        const email = emailInput.value;
+        const password = passInput.value;
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) authMsg.textContent = "Error: " + error.message;
+        else {
+            updateUserUI(data.user);
+            authMsg.textContent = "";
+        }
+    });
+
+    // Log Out
+    document.getElementById('btn-logout').addEventListener('click', async () => {
+        await supabase.auth.signOut();
+        updateUserUI(null);
+    });
+
+    checkUser();
+
+    // ==========================================
+    // 4. APP LOGIC (ENCRYPT / DECRYPT / SAVE)
+    // ==========================================
+
+    async function doEncrypt() {
+      try {
+        const plaintext = document.getElementById('plaintext').value;
+        const password = document.getElementById('aes-password').value;
+        
+        if (!password) { alert("Enter an Encryption Password"); return; }
+
+        const url = (baseURL || "") + "/api/encrypt";
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ plaintext, password })
+        });
+
+        if (!resp.ok) throw new Error(await resp.text());
+
+        const data = await resp.json();
+        const ciphertext_b64 = data.ciphertext_b64;
+
+        document.getElementById('ciphertext').value = ciphertext_b64;
+        document.getElementById('ciphertext_in').value = ciphertext_b64;
+      } catch (err) {
+        alert("Encryption failed: " + err.message);
+      }
+    }
+
+    async function saveToDB() {
+        const ciphertext_b64 = document.getElementById('ciphertext').value;
+        if(!ciphertext_b64) { alert("Nothing to save! Encrypt something first."); return; }
+        
+        const filename = document.getElementById('filenameInput').value;
+        const note = document.getElementById('noteInput').value;
+
+        // HERE IS THE MAGIC: We send the Supabase User Email as 'owner'
+        const owner = currentUser ? currentUser.email : 'anonymous';
+
+        const body = { 
+            ciphertext_b64, 
+            filename, 
+            note, 
+            owner: owner // <--- Sending the user email to FastAPI
+        };
+
+        const url = (baseURL || "") + "/api/save";
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+
+        if (resp.ok) {
+            alert("Saved successfully to Database!");
+        } else {
+            alert("Failed to save.");
+        }
+    }
+
+    async function doDecrypt() {
+      try {
+        const ciphertext_b64 = document.getElementById('ciphertext_in').value;
+        const password = document.getElementById('aes-password_in').value;
+        if (!ciphertext_b64 || !password) { alert("Provide ciphertext and password"); return; }
+
+        const url = (baseURL || "") + "/api/decrypt";
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ ciphertext_b64, password })
+        });
+
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = await resp.json();
+        document.getElementById('recovered').value = data.plaintext;
+      } catch (err) {
+        alert("Decryption failed: " + err.message);
+      }
+    }
+
+    // Event Listeners
+    document.getElementById("encryptButton").addEventListener("click", (e) => { e.preventDefault(); doEncrypt(); });
+    document.getElementById("decryptButton").addEventListener("click", (e) => { e.preventDefault(); doDecrypt(); });
+    document.getElementById("saveButton").addEventListener("click", (e) => { e.preventDefault(); saveToDB(); });
+
   </script>
 </body>
 </html>
