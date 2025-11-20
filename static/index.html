@@ -1,0 +1,168 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AES-Encryptor — Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width:700px; margin:40px auto; line-height:1.4; }
+    textarea { width:100%; height:80px; }
+    input[type="password"], input[type="text"] { width:100%; padding:8px; }
+    button { padding:8px 12px; margin-top:8px; }
+    .box { border:1px solid #ddd; padding:12px; margin-bottom:16px; border-radius:6px; }
+    label { font-weight:600; display:block; margin-bottom:6px; }
+    .small { font-size:0.9em; color:#555; }
+  </style>
+</head>
+<body>
+  <h2>AES-Encryptor — Basic Demo</h2>
+  <p class="small">AES-256-GCM with PBKDF2 (password → key). For demo only — do not use this exact code in production without review.</p>
+
+  <div class="box">
+    <label>Plaintext</label>
+    <textarea id="plaintext" placeholder="Type text to encrypt...">Hello world</textarea>
+
+    <label>Password</label>
+    <input id="password" type="password" placeholder="Enter a password">
+
+    <button id="encryptButton">Encrypt → produce ciphertext</button>
+    <p><label>Ciphertext (base64):</label><textarea id="ciphertext"></textarea></p>
+  </div>
+
+  <div class="box">
+    <label>Ciphertext (base64)</label>
+    <textarea id="ciphertext_in" placeholder="Paste ciphertext here..."></textarea>
+
+    <label>Password</label>
+    <input id="password_in" type="password" placeholder="Enter the same password">
+
+    <button id="decryptButton">Decrypt → recover plaintext</button>
+    <p><label>Recovered plaintext:</label><textarea id="recovered"></textarea></p>
+  </div>
+
+  <script>
+    // ---- CONFIG ----
+    // Default: use same origin (relative calls). If your frontend is separate from backend,
+    // set this to "https://aes-encryption-decryption-sysz.onrender.com" (no trailing slash).
+    const baseURL = ""; // <-- empty string -> fetch('/api/...') will call same origin
+
+    // ---- helper to save ciphertext to /api/save (server stores only ciphertext + optional metadata) ----
+    async function saveCiphertext(ciphertext_b64, filename = null, note = null, owner = null) {
+      try {
+        const body = { ciphertext_b64 };
+        if (filename) body.filename = filename;
+        if (note) body.note = note;
+        if (owner) body.owner = owner;
+
+        const url = (baseURL || "") + "/api/save";
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        if (!resp.ok) {
+          const text = await resp.text().catch(()=>null);
+          console.error("Save failed:", resp.status, text);
+          return null;
+        }
+        const data = await resp.json();
+        return data; // { id, created_at } expected
+      } catch (err) {
+        console.error("saveCiphertext error:", err);
+        return null;
+      }
+    }
+
+    // ---- encryption endpoint wrapper ----
+    async function doEncrypt() {
+      try {
+        const plaintext = document.getElementById('plaintext').value;
+        const password = document.getElementById('password').value;
+        if (!password) { alert("Enter a password"); return; }
+
+        // Use relative path if baseURL is empty (same-origin). Otherwise prefix.
+        const url = (baseURL || "") + "/api/encrypt";
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ plaintext, password })
+        });
+
+        if (!resp.ok) {
+          const errText = await resp.text().catch(()=>null);
+          alert('Encryption failed: ' + (errText || resp.status));
+          return;
+        }
+
+        const data = await resp.json();
+        const ciphertext_b64 = data.ciphertext_b64;
+
+        // update UI
+        document.getElementById('ciphertext').value = ciphertext_b64;
+        document.getElementById('ciphertext_in').value = ciphertext_b64; // helpful copy
+        console.log("Encrypt succeeded — ciphertext length:", ciphertext_b64.length);
+
+        // --- auto-save to DB (only ciphertext, no password) ---
+        // optional fields - if you don't have these inputs, they'll be null
+        const filename = document.getElementById('filenameInput')?.value || null;
+        const note = document.getElementById('noteInput')?.value || "auto-saved";
+
+        // auto-save toggle (if present), defaults to true
+        const autoSaveEnabled = (document.getElementById('autoSaveToggle')?.checked ?? true);
+
+        if (autoSaveEnabled) {
+          console.log("Calling saveCiphertext...");
+          const res = await saveCiphertext(ciphertext_b64, filename, note);
+          if (res) {
+            console.log("Saved record id:", res.id);
+            // optionally show saved id to user
+            // alert("Saved to DB, id: " + res.id);
+          } else {
+            console.log("Save returned null or failed.");
+          }
+        } else {
+          console.log("Auto-save disabled by user.");
+        }
+      } catch (err) {
+        console.error("doEncrypt error:", err);
+        alert("Encryption failed — see console for details.");
+      }
+    }
+
+    // ---- decryption endpoint wrapper ----
+    async function doDecrypt() {
+      try {
+        const ciphertext_b64 = document.getElementById('ciphertext_in').value;
+        const password = document.getElementById('password_in').value;
+        if (!ciphertext_b64 || !password) { alert("Provide ciphertext and password"); return; }
+
+        const url = (baseURL || "") + "/api/decrypt";
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ ciphertext_b64, password })
+        });
+        if (!resp.ok) {
+          const j = await resp.json().catch(()=>null);
+          alert('Decryption failed: ' + (j?.detail || await resp.text().catch(()=>null) || resp.status));
+          return;
+        }
+        const data = await resp.json();
+        document.getElementById('recovered').value = data.plaintext;
+      } catch (err) {
+        console.error("doDecrypt error:", err);
+        alert("Decryption failed — see console for details.");
+      }
+    }
+
+    // ---- wire buttons safely (avoids inline onclick issues) ----
+    document.getElementById("encryptButton").addEventListener("click", (e) => {
+      e.preventDefault();
+      doEncrypt();
+    });
+    document.getElementById("decryptButton").addEventListener("click", (e) => {
+      e.preventDefault();
+      doDecrypt();
+    });
+  </script>
+</body>
+</html>
